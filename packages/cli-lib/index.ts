@@ -1,4 +1,4 @@
-export {default as extractAndWrite, extract} from './src/extract'
+export {default as extractAndWrite, extract, Plugin} from './src/extract'
 export type {ExtractCLIOptions, ExtractOpts} from './src/extract'
 export type {MessageDescriptor} from '@formatjs/ts-transformer'
 export type {FormatFn, CompileFn} from './src/formatters/default'

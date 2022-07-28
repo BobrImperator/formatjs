@@ -12,6 +12,8 @@ import {parseScript} from './parse_script'
 import {printAST} from '@formatjs/icu-messageformat-parser/printer'
 import {hoistSelectors} from '@formatjs/icu-messageformat-parser/manipulator'
 import {parse} from '@formatjs/icu-messageformat-parser'
+
+import { transform } from 'ember-template-recast';
 export interface ExtractionResult<M = Record<string, string>> {
   /**
    * List of extracted messages
@@ -52,6 +54,86 @@ export type ExtractCLIOptions = Omit<
   ignore?: string[]
 }
 
+interface ProcessOpts extends Opts {
+  idInterpolationPattern?: ExtractOpts['idInterpolationPattern'],
+  plugins?: ExtractOpts['plugins'],
+  onMsgExtracted?: ExtractOpts['onMsgExtracted'],
+}
+
+export class Plugin {
+  /**
+   * List of file extensions the plugin should run for.
+   * e.g. '.hbs'
+   */
+  extensions: string[] = [];
+  source: string;
+  fileName: string;
+  options: ProcessOpts;
+
+
+  constructor(source: string, fileName: string, options: ProcessOpts) {
+    this.source = source;
+    this.fileName = fileName;
+    this.options = options;
+    
+    if (this.extensions.length === 0) {
+      throw new Error("Plugin must define extensions field.")
+    }
+
+    this.process(source, fileName);
+  }
+
+  extractMessage(id?: string, message?: string, description?: string): void {
+    let defaultMessage = message && this.trimMessage(message);
+    let desc = description && this.trimMessage(description);
+    this.options?.onMsgExtracted?.(this.source, [{
+      id: this.overrideIdFn(id, defaultMessage, desc) as string,
+      description: desc,
+      defaultMessage,
+    }]);
+  }
+
+  process(_source: string, _fileName: string): void {
+    throw new Error("Plugin must define process method.")
+  }
+
+  overrideIdFn(id?: string, message?: string, description?: string): string | undefined {
+    if (typeof this.options.overrideIdFn === 'function') {
+      return this.options.overrideIdFn(id, message, description);
+    }
+  }
+
+  trimMessage(message: string): string {
+    return message.trim().replace(/\s+/gm, ' ')
+  }
+}
+
+class HbsPlugin extends Plugin {
+  process(source: string) {
+    let extractText = (node: any) => {
+      if (node.path.original === 'format-message') {
+        let message = node.params[0]?.original
+        let desc = node.params[1]?.original
+      
+        this.extractMessage(undefined, message, desc);
+      }
+    };
+
+    let visitor = function (): any {
+      return {
+        MustacheStatement(node: any) {
+          extractText(node, fileName, options)
+        },
+        SubExpression(node: any) {
+          extractText(node, fileName, options)
+        },
+      }
+    }
+
+    transform(source, visitor)
+  }
+}
+
 export type ExtractOpts = Opts & {
   /**
    * Whether to throw an error if we had any issues with
@@ -73,7 +155,11 @@ export type ExtractOpts = Opts & {
   /**
    * Whether to hoist selectors & flatten sentences
    */
-  flatten?: boolean
+  flatten?: boolean,
+  /**
+   * Provided extractor plugins
+   */
+  plugins?: string[]
 } & Pick<Opts, 'onMsgExtracted' | 'onMetaExtracted'>
 
 function calculateLineColFromOffset(
@@ -92,7 +178,7 @@ function calculateLineColFromOffset(
 async function processFile(
   source: string,
   fn: string,
-  {idInterpolationPattern, ...opts}: Opts & {idInterpolationPattern?: string}
+  opts: ProcessOpts
 ) {
   let messages: ExtractedMessageDescriptor[] = []
   let meta: Record<string, string> | undefined
@@ -117,7 +203,7 @@ async function processFile(
     },
   }
 
-  if (!opts.overrideIdFn && idInterpolationPattern) {
+  if (!opts.overrideIdFn && opts.idInterpolationPattern) {
     opts = {
       ...opts,
       overrideIdFn: (id, defaultMessage, description, fileName) =>
@@ -126,7 +212,7 @@ async function processFile(
           {
             resourcePath: fileName,
           } as any,
-          idInterpolationPattern,
+          opts.idInterpolationPattern as string,
           {
             content: description
               ? `${defaultMessage}#${
@@ -143,10 +229,31 @@ async function processFile(
   debug('Processing opts for %s: %s', fn, opts)
 
   const scriptParseFn = parseScript(opts, fn)
-  if (fn.endsWith('.vue')) {
+  
+  
+  let fileExtension = `.${fn.split('.').pop()}`;
+  if (fileExtension === '.vue') {
     debug('Processing %s using vue extractor', fn)
     const {parseFile} = await import('./vue_extractor')
     parseFile(source, fn, scriptParseFn)
+  else if (fileExtension === '.hbs') {
+    new HbsPlugin(source, fn, opts);
+  // if (opts.plugins?.length) {
+   // const plugins = await Promise.all(opts.plugins.map(async (plugin) => {
+   //   try {
+   //     return (await import(plugin)).default as any;
+   //   } catch (error) {
+   //     throw new Error(`Couldn't load the provided plugin ${plugin}`);
+   //   }
+   // }));
+ 
+   // const PluginForExtension = plugins.find((Plugin) => Plugin.extensions.includes(fileExtension));
+
+   // if (PluginForExtension) {
+   //   new PluginForExtension(source, fn, opts);  
+   // }
+  }
+
   } else {
     debug('Processing %s using typescript extractor', fn)
     scriptParseFn(source)

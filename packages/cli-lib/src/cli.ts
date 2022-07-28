@@ -117,6 +117,10 @@ becomes "{count, plural, one{I have a dog} other{I have many dogs}}".
 The goal is to provide as many full sentences as possible since fragmented
 sentences are not translator-friendly.`
     )
+    .option(
+      '-p, --plugins <value>',
+      'Use to specify additional extractor plugins.',
+    )
     .action(async (filePatterns: string[], cmdObj: ExtractCLIOptions) => {
       debug('File pattern:', filePatterns)
       debug('Options:', cmdObj)
@@ -142,6 +146,7 @@ sentences are not translator-friendly.`
         readFromStdin: filePatterns.length === 0,
         preserveWhitespace: cmdObj.preserveWhitespace,
         flatten: cmdObj.flatten,
+        plugins: cmdObj.plugins,
       })
       process.exit(0)
     })

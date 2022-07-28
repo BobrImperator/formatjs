@@ -17,6 +17,7 @@ describe('unit', function () {
   })
 
   it('it passes camelCase-converted arguments to typescript API', async () => {
+    console.log('here?')
     await cliMain([
       'node',
       'path/to/formatjs-cli',

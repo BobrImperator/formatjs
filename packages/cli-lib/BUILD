@@ -155,6 +155,22 @@ jest_test(
     deps = VUE_DEPS,
 )
 
+jest_test(
+    name = "integration-extract-hbs",
+    size = "large",
+    srcs = [
+        ":bin/formatjs",
+    ] + glob(
+        [
+            "tests/integration/extract-hbs/**/*",
+        ],
+    ),
+    flaky = True,
+    deps = SRC_DEPS + [
+      "@npm//ember-template-recast",
+    ],
+)
+
 generated_file_test(
     name = "tsconfig_json",
     src = "tsconfig.json",
